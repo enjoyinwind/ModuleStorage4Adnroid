@@ -25,6 +25,8 @@ import javax.lang.model.element.TypeElement;
 
 @AutoService(Processor.class)
 public class ModuleDatabaseAnnotationProcessor extends AbstractProcessor {
+    private static final String MasterDbName = "moduleDatabase";
+    private static final String MasterDbVersionKey = "MasterDbVersion";
 
     @Override
     public boolean process(Set<? extends TypeElement> annotations, RoundEnvironment roundEnv) {
@@ -52,7 +54,24 @@ public class ModuleDatabaseAnnotationProcessor extends AbstractProcessor {
                 .addMethod(constructor)
                 .build();
 
+        JavaFile javaFile = JavaFile.builder("com.lxf.storage", typeSpec)
+                .build();
+
+        try {
+            javaFile.writeTo(processingEnv.getFiler());
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+
+        return true;
+    }
+
+    private Map<String, VersionInfo> readVersionMap(RoundEnvironment roundEnv){
         Map<String, VersionInfo> map = new HashMap<>();
+
+        //处理前版本数据
+
+        //处理注解
         for (Element element : roundEnv.getElementsAnnotatedWith(ModuleDatabase.class)) {
             if (element.getKind() == ElementKind.CLASS) {
                 TypeElement typeElement = (TypeElement) element;
@@ -67,16 +86,32 @@ public class ModuleDatabaseAnnotationProcessor extends AbstractProcessor {
             }
         }
 
-        JavaFile javaFile = JavaFile.builder("com.lxf.storage", typeSpec)
-                .build();
-
-        try {
-            javaFile.writeTo(processingEnv.getFiler());
-        } catch (IOException e) {
-            e.printStackTrace();
+        int oldMasterDbVersion = 0;
+        if(map.get(MasterDbVersionKey) != null){
+            oldMasterDbVersion = map.get(MasterDbVersionKey).oldVersion;
+        }
+        Map<String, VersionInfo> result = new HashMap<>(map.size());
+        for(String key : map.keySet()){
+            VersionInfo versionInfo = map.get(key);
+            if(!key.equals(MasterDbVersionKey) && versionInfo != null && versionInfo.newVersion != versionInfo.oldVersion){
+                result.put(key, versionInfo);
+            }
         }
 
-        return true;
+        if(result.size() > 0){
+            VersionInfo masterDbVersionInfo = map.get(MasterDbVersionKey);
+            if(masterDbVersionInfo != null){
+                masterDbVersionInfo.newVersion = oldMasterDbVersion + 1;
+            } else {
+                masterDbVersionInfo = new VersionInfo();
+                masterDbVersionInfo.oldVersion = oldMasterDbVersion;
+                masterDbVersionInfo.newVersion = oldMasterDbVersion + 1;
+            }
+
+            result.put(MasterDbVersionKey, masterDbVersionInfo);
+        }
+
+        return result;
     }
 
     @Override
