@@ -1,1 +1,1 @@
-include ':app', ':storage', ':module1'
+include ':app', ':storage', ':module1', ':processors', ':annotations'

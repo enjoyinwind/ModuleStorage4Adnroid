@@ -1,4 +1,4 @@
-package com.lxf.storage;
+package com.lxf.annotations;
 
 import java.lang.annotation.ElementType;
 import java.lang.annotation.Retention;
