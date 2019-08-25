@@ -1,9 +1,11 @@
 package com.lxf.processors;
 
+import javax.lang.model.element.TypeElement;
+
 public class InnerVersionInfo {
     int oldVersion;
     int newVersion;
-    String listenerName;
+    TypeElement listenerType;
 
     InnerVersionInfo(int oldVersion, int newVersion) {
         this.oldVersion = oldVersion;

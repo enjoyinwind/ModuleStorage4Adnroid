@@ -6,6 +6,7 @@ import com.squareup.javapoet.ClassName;
 import com.squareup.javapoet.FieldSpec;
 import com.squareup.javapoet.JavaFile;
 import com.squareup.javapoet.MethodSpec;
+import com.squareup.javapoet.ParameterizedTypeName;
 import com.squareup.javapoet.TypeName;
 import com.squareup.javapoet.TypeSpec;
 
@@ -18,6 +19,7 @@ import java.util.Set;
 import javax.annotation.processing.AbstractProcessor;
 import javax.annotation.processing.Processor;
 import javax.annotation.processing.RoundEnvironment;
+import javax.lang.model.SourceVersion;
 import javax.lang.model.element.Element;
 import javax.lang.model.element.ElementKind;
 import javax.lang.model.element.Modifier;
@@ -35,7 +37,10 @@ public class ModuleDatabaseAnnotationProcessor extends AbstractProcessor {
             return true;
         }
 
-        FieldSpec versionMapFieldSpec = FieldSpec.builder(Map.class, "mVersionMap", Modifier.PRIVATE)
+        FieldSpec versionMapFieldSpec = FieldSpec.builder(ParameterizedTypeName.get(ClassName.get("java.util", "Map"),
+                ClassName.get("java.lang", "String"),
+                ClassName.get("com.lxf.storage", "VersionInfo")),
+                "mVersionMap", Modifier.PRIVATE)
                 .build();
 
         int newDatabaseVersion = map.get(MasterDbVersionKey).newVersion;
@@ -43,34 +48,37 @@ public class ModuleDatabaseAnnotationProcessor extends AbstractProcessor {
 
         MethodSpec.Builder constructorBuilder = MethodSpec.constructorBuilder()
                 .addModifiers(Modifier.PUBLIC)
-                .returns(void.class)
                 .addParameter(ClassName.get("android.content", "Context"), "context")
                 .addParameter(String.class, "name")
                 .addParameter(TypeName.INT, "version")
-                .addCode("super(context, $S, null, $L);", MasterDbName, newDatabaseVersion);
+                .addCode("super(context, $S, null, $L);\n", MasterDbName, newDatabaseVersion);
 
-        constructorBuilder.addStatement("this.mVersionMap = new HashMap<$T, $T>($L)", String.class, ClassName.get("com.lxf.storage", "VersionInfo"), map.size());
+        constructorBuilder.addStatement("this.mVersionMap = new $T<$T, $T>($L)", HashMap.class, String.class, ClassName.get("com.lxf.storage", "VersionInfo"), map.size());
         for(String key : map.keySet()){
             InnerVersionInfo versionInfo = map.get(key);
 
-            constructorBuilder.addCode("this.mVersionMap.put($S, new VersionInfo($L, $L, new $S()))", key, versionInfo.oldVersion, versionInfo.newVersion, versionInfo.listenerName);
+            constructorBuilder.addCode("this.mVersionMap.put($S, new VersionInfo($L, $L, new $T()));\n", key, versionInfo.oldVersion, versionInfo.newVersion, versionInfo.listenerType);
         }
 
         MethodSpec onCreateMethodSpec = MethodSpec.methodBuilder("onCreate")
                 .addAnnotation(Override.class)
+                .addModifiers(Modifier.PUBLIC)
+                .returns(void.class)
                 .addParameter(ClassName.get("android.database.sqlite", "SQLiteDatabase"), "db")
                 .beginControlFlow("for(VersionInfo item : this.mVersionMap.values())")
-                .addCode("item.listener.onCreate(db);")
+                .addCode("item.listener.onCreate(db);\n")
                 .endControlFlow()
                 .build();
 
         MethodSpec onUpgradeMethodSpec = MethodSpec.methodBuilder("onUpgrade")
                 .addAnnotation(Override.class)
+                .addModifiers(Modifier.PUBLIC)
+                .returns(void.class)
                 .addParameter(ClassName.get("android.database.sqlite", "SQLiteDatabase"), "db")
                 .addParameter(TypeName.INT, "oldVersion")
                 .addParameter(TypeName.INT, "newVersion")
                 .beginControlFlow("for(VersionInfo item : this.mVersionMap.values())")
-                .addCode("item.listener.onUpgrade(db, item.oldVersion, item.newVersion);")
+                .addCode("item.listener.onUpgrade(db, item.oldVersion, item.newVersion);\n")
                 .endControlFlow()
                 .build();
 
@@ -113,7 +121,7 @@ public class ModuleDatabaseAnnotationProcessor extends AbstractProcessor {
                 } else {
                     versionInfo.newVersion = annotation.version();
                 }
-                versionInfo.listenerName = typeElement.getQualifiedName().toString();
+                versionInfo.listenerType = typeElement;
 
                 map.put(annotation.name(), versionInfo);
             }
@@ -150,5 +158,10 @@ public class ModuleDatabaseAnnotationProcessor extends AbstractProcessor {
         Set<String> set = new HashSet<>(1);
         set.add(ModuleDatabase.class.getCanonicalName());
         return set;
+    }
+
+    @Override
+    public SourceVersion getSupportedSourceVersion() {
+        return SourceVersion.latestSupported();
     }
 }
