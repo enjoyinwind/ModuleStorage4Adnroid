@@ -30,28 +30,57 @@ public class ModuleDatabaseAnnotationProcessor extends AbstractProcessor {
 
     @Override
     public boolean process(Set<? extends TypeElement> annotations, RoundEnvironment roundEnv) {
+        Map<String, InnerVersionInfo> map = readVersionMap(roundEnv);
+        if(map.size() < 1){
+            return true;
+        }
+
         FieldSpec versionMapFieldSpec = FieldSpec.builder(Map.class, "mVersionMap", Modifier.PRIVATE)
                 .build();
-        FieldSpec listenerMapFieldSpec = FieldSpec.builder(Map.class, "mListenerMap", Modifier.PRIVATE)
-                .build();
 
-        int newDatabaseVersion = 0;
-        MethodSpec constructor = MethodSpec.methodBuilder("ModuleDatabaseHelper")
+        int newDatabaseVersion = map.get(MasterDbVersionKey).newVersion;
+        map.remove(MasterDbVersionKey);
+
+        MethodSpec.Builder constructorBuilder = MethodSpec.constructorBuilder()
                 .addModifiers(Modifier.PUBLIC)
                 .returns(void.class)
                 .addParameter(ClassName.get("android.content", "Context"), "context")
                 .addParameter(String.class, "name")
                 .addParameter(TypeName.INT, "version")
-                .addCode("super(context, name, null, $L);", newDatabaseVersion)
-                .addStatement("this.mVersionMap = new HashMap<$T, $T>", String.class, VersionInfo.class)
+                .addCode("super(context, $S, null, $L);", MasterDbName, newDatabaseVersion);
+
+        constructorBuilder.addStatement("this.mVersionMap = new HashMap<$T, $T>($L)", String.class, ClassName.get("com.lxf.storage", "VersionInfo"), map.size());
+        for(String key : map.keySet()){
+            InnerVersionInfo versionInfo = map.get(key);
+
+            constructorBuilder.addCode("this.mVersionMap.put($S, new VersionInfo($L, $L, new $S()))", key, versionInfo.oldVersion, versionInfo.newVersion, versionInfo.listenerName);
+        }
+
+        MethodSpec onCreateMethodSpec = MethodSpec.methodBuilder("onCreate")
+                .addAnnotation(Override.class)
+                .addParameter(ClassName.get("android.database.sqlite", "SQLiteDatabase"), "db")
+                .beginControlFlow("for(VersionInfo item : this.mVersionMap.values())")
+                .addCode("item.listener.onCreate(db);")
+                .endControlFlow()
+                .build();
+
+        MethodSpec onUpgradeMethodSpec = MethodSpec.methodBuilder("onUpgrade")
+                .addAnnotation(Override.class)
+                .addParameter(ClassName.get("android.database.sqlite", "SQLiteDatabase"), "db")
+                .addParameter(TypeName.INT, "oldVersion")
+                .addParameter(TypeName.INT, "newVersion")
+                .beginControlFlow("for(VersionInfo item : this.mVersionMap.values())")
+                .addCode("item.listener.onUpgrade(db, item.oldVersion, item.newVersion);")
+                .endControlFlow()
                 .build();
 
         TypeSpec typeSpec = TypeSpec.classBuilder("ModuleDatabaseHelper")
                 .addModifiers(Modifier.PUBLIC, Modifier.FINAL)
                 .superclass(ClassName.get("android.database.sqlite", "SQLiteOpenHelper"))
                 .addField(versionMapFieldSpec)
-                .addField(listenerMapFieldSpec)
-                .addMethod(constructor)
+                .addMethod(constructorBuilder.build())
+                .addMethod(onCreateMethodSpec)
+                .addMethod(onUpgradeMethodSpec)
                 .build();
 
         JavaFile javaFile = JavaFile.builder("com.lxf.storage", typeSpec)
@@ -66,10 +95,11 @@ public class ModuleDatabaseAnnotationProcessor extends AbstractProcessor {
         return true;
     }
 
-    private Map<String, VersionInfo> readVersionMap(RoundEnvironment roundEnv){
-        Map<String, VersionInfo> map = new HashMap<>();
+    private Map<String, InnerVersionInfo> readVersionMap(RoundEnvironment roundEnv){
+        Map<String, InnerVersionInfo> map = new HashMap<>();
 
         //处理前版本数据
+        VersionUtils.read(map);
 
         //处理注解
         for (Element element : roundEnv.getElementsAnnotatedWith(ModuleDatabase.class)) {
@@ -77,11 +107,14 @@ public class ModuleDatabaseAnnotationProcessor extends AbstractProcessor {
                 TypeElement typeElement = (TypeElement) element;
                 ModuleDatabase annotation = typeElement.getAnnotation(ModuleDatabase.class);
 
-                VersionInfo versionInfo = map.get(annotation.name());
+                InnerVersionInfo versionInfo = map.get(annotation.name());
                 if(null == versionInfo){
-                    versionInfo = new VersionInfo();
+                    versionInfo = new InnerVersionInfo(0, annotation.version());
+                } else {
+                    versionInfo.newVersion = annotation.version();
                 }
-                versionInfo.newVersion = annotation.version();
+                versionInfo.listenerName = typeElement.getQualifiedName().toString();
+
                 map.put(annotation.name(), versionInfo);
             }
         }
@@ -90,22 +123,20 @@ public class ModuleDatabaseAnnotationProcessor extends AbstractProcessor {
         if(map.get(MasterDbVersionKey) != null){
             oldMasterDbVersion = map.get(MasterDbVersionKey).oldVersion;
         }
-        Map<String, VersionInfo> result = new HashMap<>(map.size());
+        Map<String, InnerVersionInfo> result = new HashMap<>(map.size());
         for(String key : map.keySet()){
-            VersionInfo versionInfo = map.get(key);
+            InnerVersionInfo versionInfo = map.get(key);
             if(!key.equals(MasterDbVersionKey) && versionInfo != null && versionInfo.newVersion != versionInfo.oldVersion){
                 result.put(key, versionInfo);
             }
         }
 
         if(result.size() > 0){
-            VersionInfo masterDbVersionInfo = map.get(MasterDbVersionKey);
+            InnerVersionInfo masterDbVersionInfo = map.get(MasterDbVersionKey);
             if(masterDbVersionInfo != null){
                 masterDbVersionInfo.newVersion = oldMasterDbVersion + 1;
             } else {
-                masterDbVersionInfo = new VersionInfo();
-                masterDbVersionInfo.oldVersion = oldMasterDbVersion;
-                masterDbVersionInfo.newVersion = oldMasterDbVersion + 1;
+                masterDbVersionInfo = new InnerVersionInfo(oldMasterDbVersion, oldMasterDbVersion + 1);
             }
 
             result.put(MasterDbVersionKey, masterDbVersionInfo);

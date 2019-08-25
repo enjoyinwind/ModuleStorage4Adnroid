@@ -6,6 +6,6 @@ public interface IModuleDatabaseHelper {
 
     void onCreate(SQLiteDatabase db);
 
-    public void onUpgrade(SQLiteDatabase db, int oldVersion, int newVersion);
+    void onUpgrade(SQLiteDatabase db, int oldVersion, int newVersion);
 
 }

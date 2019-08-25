@@ -9,7 +9,7 @@ import com.lxf.storage.IModuleDatabaseHelper;
 public class DatabaseModule1 implements IModuleDatabaseHelper {
     @Override
     public void onCreate(SQLiteDatabase db) {
-
+        db.execSQL("create table module1table1(id integer primary key autoincrement, name varchar(64), address varchar(64))");
     }
 
     @Override
