@@ -13,9 +13,9 @@ import java.util.Map;
 public class VersionUtils {
     private static final String VersionFileName = "moduleDatabaseVersion.txt";
 
-    public static void read(Map<String, InnerVersionInfo> map) {
+    public static void read(Map<String, InnerVersionInfo> map, String fileName) {
         System.out.println("VersionUtils read: " + System.getProperty("user.dir"));
-        File file = new File(System.getProperty("user.dir") + File.separator + VersionFileName);
+        File file = new File(System.getProperty("user.dir") + File.separator + fileName);
         if (!file.exists()) {
             return;
         }
@@ -43,9 +43,9 @@ public class VersionUtils {
         }
     }
 
-    public static void write(Map<String, InnerVersionInfo> map) {
+    public static void write(Map<String, InnerVersionInfo> map, String fileName) {
         try {
-            File file = new File(System.getProperty("user.dir") + File.separator + VersionFileName);
+            File file = new File(System.getProperty("user.dir") + File.separator + fileName);
             BufferedWriter out = new BufferedWriter(new FileWriter(file));
 
             try {

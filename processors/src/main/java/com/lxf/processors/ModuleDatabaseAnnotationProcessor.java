@@ -29,9 +29,21 @@ import javax.lang.model.element.TypeElement;
 public class ModuleDatabaseAnnotationProcessor extends AbstractProcessor {
     private static final String MasterDbName = "moduleDatabase";
     private static final String MasterDbVersionKey = "MasterDbVersion";
+    private String moduleDatabasePreviousVersionFileName;
+    private String moduleDatabaseCurrentVersionFileName;
 
     @Override
     public boolean process(Set<? extends TypeElement> annotations, RoundEnvironment roundEnv) {
+        if(annotations.size() < 1){
+            return true;
+        }
+
+        Map<String, String> options = processingEnv.getOptions();
+        for (String key : options.keySet()) {
+            this.moduleDatabasePreviousVersionFileName = options.get("moduleDatabasePreviousVersionFileName");
+            this.moduleDatabaseCurrentVersionFileName = options.get("moduleDatabaseCurrentVersionFileName");
+        }
+
         Map<String, InnerVersionInfo> map = readVersionMap(roundEnv);
         if(map.size() < 1){
             return true;
@@ -107,7 +119,7 @@ public class ModuleDatabaseAnnotationProcessor extends AbstractProcessor {
         Map<String, InnerVersionInfo> map = new HashMap<>();
 
         //处理前版本数据
-        VersionUtils.read(map);
+        VersionUtils.read(map, moduleDatabasePreviousVersionFileName);
 
         //处理注解
         for (Element element : roundEnv.getElementsAnnotatedWith(ModuleDatabase.class)) {
@@ -145,9 +157,15 @@ public class ModuleDatabaseAnnotationProcessor extends AbstractProcessor {
                 masterDbVersionInfo.newVersion = oldMasterDbVersion + 1;
             } else {
                 masterDbVersionInfo = new InnerVersionInfo(oldMasterDbVersion, oldMasterDbVersion + 1);
+                map.put(MasterDbVersionKey, masterDbVersionInfo);
             }
 
             result.put(MasterDbVersionKey, masterDbVersionInfo);
+        }
+
+        //写入当前
+        if(map.size() > 0){
+            VersionUtils.write(map, moduleDatabaseCurrentVersionFileName);
         }
 
         return result;
